@@ -1,0 +1,254 @@
+#importing necessary libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
+#reading the dataset
+df = pd.read_csv("crocodile_dataset.csv")
+df.head()
+
+df.info()
+
+#Checking if there are any duplicate rows
+def check_and_drop_duplicate(df):
+    if df.duplicated().sum() != 0:
+        print(f'There are {df.duplicated().sum()} duplicated rows.')
+        df = df.drop_duplicates().copy()
+        print('Rows dropped successfully.')
+    else:
+        print('There are no duplicate rows.')
+    return df
+
+df = check_and_drop_duplicate(df)
+
+
+df_encoded = df.copy()  #copying the code
+
+#changing some of the variables to numbers instead of string, so the ML problem can be solved
+sex_mapping = {"Male":0, "Female": 1}
+genuses_mapping ={"Crocodylus" : 0, "Osteolaemus":1, "Mecistops":2}
+conservation_status_mapping = {"Data Deficient":0, "Least Concern":1, "Vulnerable":2, "Critically Endagared":3}
+df_encoded['Sex Encoded'] = df['Sex'].map(sex_mapping)
+df_encoded['Genus Encoded'] = df['Genus'].map(genuses_mapping)
+df_encoded['Conservation Encoded'] = df['Conservation Status'].map(conservation_status_mapping)
+
+numerical_cols = ["Observed Length (m)", "Observed Weight (kg)", "Sex Encoded", "Genus Encoded","Conservation Encoded"]
+
+#Making correlation matrix for the numerical variables
+correlation_matrix = df_encoded[numerical_cols].corr()
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+plt.title("Correlation Heatmap")
+plt.show()
+
+#Dropping unneccessary variables for this project, aka preprocessing
+df_encoded.drop(["Observation ID","Scientific Name", "Date of Observation", "Observer Name", "Notes", "Country/Region",
+         "Habitat Type", "Conservation Status", "Genus", "Conservation Encoded", "Sex"], axis=1, inplace = True)
+
+df_encoded.head()
+
+newdata = df_encoded[(df_encoded["Age Class"] == 'Adult')&
+                    (df_encoded["Sex Encoded"].isin([0, 1]))] #only keeping adult crocodiles and male and female individuals
+newdata.head(10)  #first 10 datapoints of the preprocessed data
+
+
+# Visualize the distribution of observed length and weight for each genus using boxplots
+# This analysis reveals the size ranges of each genus and the overlap between them
+fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+# Map genus codes to names
+genus_names = {0: 'Crocodylus', 1: 'Osteolaemus', 2: 'Mecistops'}
+newdata['Genus Name'] = newdata['Genus Encoded'].map(genus_names)
+
+# Boxplot for Length
+sns.boxplot(x='Genus Name', y='Observed Length (m)', data=newdata, 
+            palette=['mediumturquoise', 'coral', 'lightsteelblue'], ax=axes[0])
+axes[0].set_title('Distribution of Observed Length (m) across Genus', fontsize=14)
+axes[0].set_xlabel('Genus', fontsize=12)
+axes[0].set_ylabel('Observed Length (m)', fontsize=12)
+axes[0].grid(axis='y', alpha=0.3)
+
+# Boxplot for Weight
+sns.boxplot(x='Genus Name', y='Observed Weight (kg)', data=newdata, 
+            palette=['mediumturquoise', 'coral', 'lightsteelblue'], ax=axes[1])
+axes[1].set_title('Distribution of Observed Weight (kg) across Genus', fontsize=14)
+axes[1].set_xlabel('Genus', fontsize=12)
+axes[1].set_ylabel('Observed Weight (kg)', fontsize=12)
+axes[1].grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+newdata.shape
+
+#Importing the import library for training the machine and visualizing the results
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, log_loss
+
+X=newdata[["Observed Length (m)", "Observed Weight (kg)", "Sex Encoded"]]
+y=newdata["Genus Encoded"]
+
+#splitting the data for training set 70% and rest to 30%
+X_train, X_tmp, y_train, y_tmp = train_test_split(X, y, test_size=0.30, random_state=42, stratify = y)
+
+#splitting the rest of the data set into test and validation sets
+X_val, X_test, y_val, y_test = train_test_split(X_tmp, y_tmp, test_size = 0.5, random_state = 42, stratify = y_tmp)
+
+#Verifying the split
+print(f"Training set size:{len(X_train)} ({len(X_train)/len(X)*100:.1f}%)")
+print(f"Testing set size: {len(X_test)} ({len(X_test) /len(X)*100:.1f}%)")
+print(f"Validation set size: {len(X_val)} ({len(X_val)/len(X)*100:.1f}%)")
+
+#The logistic regression
+log_regr = LogisticRegression(multi_class = "multinomial", max_iter = 1000, random_state = 42)
+log_regr.fit(X_train, y_train)
+
+#Predicting the probabilities
+y_pred_proba_train = log_regr.predict_proba(X_train)
+y_pred_proba_lr = log_regr.predict_proba(X_val)
+
+#Calculating the log loss error
+log_loss_train = log_loss(y_train, y_pred_proba_train)
+log_loss_lr = log_loss(y_val, y_pred_proba_lr)
+print(f'Logistic regression Log loss for training set: {log_loss_train}')
+print(f'\nLogistic regression Log loss for validation: {log_loss_lr}')
+
+#Prediction for the training set
+train_predict = log_regr.predict(X_train)
+train_accuracy = accuracy_score(y_train, train_predict)
+print(f'\nTraining accuracy: {train_accuracy}')
+
+#Prediction for the validation set
+val_predict = log_regr.predict(X_val)
+val_accuracy = accuracy_score(y_val, val_predict)
+print(f"\nValidation accuracy: {val_accuracy}")
+
+from sklearn.svm import SVC
+from sklearn.metrics import hinge_loss, accuracy_score
+
+#Training for SVC method
+model = SVC(probability = True, random_state = 42)
+model.fit(X_train, y_train)
+
+#Predicting the probabilities
+y_decision_svc = model.decision_function(X_val)
+y_decision_svc_train = model.decision_function(X_train)
+
+#Calculating the Hinge loss error
+hinge_loss_svc = hinge_loss(y_val, y_decision_svc)
+hinge_loss_svc_train = hinge_loss(y_train, y_decision_svc_train)
+print(f'\nSVC hinge loss for training: {hinge_loss_svc_train}')
+print(f'SVC hinge loss for validation: {hinge_loss_svc}')
+
+
+#prediction for the training set
+train_predic = model.predict(X_train)
+train_accuracy = accuracy_score(y_train, train_predict)
+print(f'\n Training accuracy: {train_accuracy}')
+
+#Prediction for the validation set
+val_predict = model.predict(X_val)
+val_accuracy = accuracy_score(y_val, val_predict)
+print(f"\nValidation accuracy: {val_accuracy}")
+
+#predictind the probabilities for the test set
+y_decision_svc_test = model.decision_function(X_test)
+
+#Calculating the Hinge loss error
+hinge_loss_svc_test = hinge_loss(y_test, y_decision_svc_test)
+print(f'\nSVC hinge loss for test set: {hinge_loss_svc_test}')
+
+#Prediction for the test set
+test_predict = model.predict(X_test)
+test_accuracy = accuracy_score(y_test, test_predict)
+print(f'\nTest set accuracy: {test_accuracy}')
+
+#Making a confusion matrix
+conf_mat = confusion_matrix(y_test, test_predict)
+
+plt.figure(figsize=(8,6))
+sns.heatmap(conf_mat, annot = True, fmt= 'd', cmap='Blues',
+           xticklabels = ['Crocodylus', 'Osteolaemus', 'Mecistops'],
+           yticklabels = ['Crocodylus', 'Osteolaemus', 'Mecistops'])
+plt.title("Confusion Matrix for test set")
+plt.ylabel("True Genus")
+plt.xlabel("Predicted Genus")
+
+plt.show()
+
+#Classification report
+print("\nClassification Report:")
+print(classification_report(y_test, test_predict, 
+                           target_names=['Crocodylus', 'Osteolaemus', 'Mecistops']))
+
+#Visualizing the logistic regression for the training data set with scatter plots
+plt.figure(figsize=(12, 6))
+
+# Add jitter for better visibility
+jitter = np.random.normal(0, 0.05, size=len(X_train))
+
+# Plot training data points (blue circles)
+plt.scatter(X_train['Observed Length (m)'], 
+           y_train + jitter,
+           alpha=0.6, s=80, 
+           color='skyblue', 
+           edgecolors='black', 
+           linewidth=0.5,
+           label='Training datapoints')
+
+# Get predictions for training data
+y_train_pred = log_regr.predict(X_train)
+
+# Plot predicted labels (red dots)
+plt.scatter(X_train['Observed Length (m)'], 
+           y_train_pred + jitter,
+           alpha=0.8, s=15, 
+           color='red', 
+           marker='o',
+           label='Predicted label (ŷ)')
+
+plt.xlabel('Observed Length (m)', fontsize=12)
+plt.ylabel('Genus', fontsize=12)
+plt.yticks([0, 1, 2], ['Crocodylus', 'Osteolaemus', 'Mecistops'])
+plt.title('Observed Length vs Genus (Training Data vs Predictions)', fontsize=14)
+plt.legend(loc='best', fontsize=11)
+plt.grid(axis='x', alpha=0.3)
+plt.tight_layout()
+plt.show()  
+
+#The same visualization with weight
+plt.figure(figsize=(12, 6))
+
+# Add jitter
+jitter = np.random.normal(0, 0.05, size=len(X_train))
+
+# Plot training data points (blue circles)
+plt.scatter(X_train['Observed Weight (kg)'], 
+           y_train + jitter,
+           alpha=0.6, s=80, 
+           color='skyblue', 
+           edgecolors='black', 
+           linewidth=0.5,
+           label='Training datapoints')
+
+# Get predictions for training data
+y_train_pred = log_regr.predict(X_train)
+
+# Plot predicted labels (red dots)
+plt.scatter(X_train['Observed Weight (kg)'], 
+           y_train_pred + jitter,
+           alpha=0.8, s=15, 
+           color='red', 
+           marker='o',
+           label='Predicted label (ŷ)')
+
+plt.xlabel('Observed Weight (kg)', fontsize=12)
+plt.ylabel('Genus', fontsize=12)
+plt.yticks([0, 1, 2], ['Crocodylus', 'Osteolaemus', 'Mecistops'])
+plt.title('Observed Weight vs Genus (Training Data vs Predictions)', fontsize=14)
+plt.legend(loc='best', fontsize=11)
+plt.grid(axis='x', alpha=0.3)
+plt.tight_layout()
+plt.show() 
