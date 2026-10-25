@@ -6,7 +6,7 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 #reading the dataset
-df = pd.read_csv(r"C:\Users\miilraut\Downloads\crocodile_dataset.csv")
+df = pd.read_csv("data/crocodile_dataset.csv")
 df.head()
 
 df.info()
